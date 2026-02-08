@@ -1,6 +1,6 @@
 terraform {
   backend "s3" {
-    bucket         = "ekshivablast-terraform-state-2024"
+    bucket         = "ekshivablast-terraform-state-2024" # change this
     key            = "eks/dev/terraform.tfstate"
     region         = "us-east-1"
     encrypt        = true

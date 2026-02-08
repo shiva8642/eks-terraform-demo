@@ -28,6 +28,7 @@ jobs:
       uses: hashicorp/setup-terraform@v2
       with:
         terraform_version: ${{ env.TF_VERSION }}
+        terraform_wrapper: false
 
     - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v2
@@ -47,13 +48,9 @@ jobs:
       run: terraform validate
 
     - name: Terraform Plan
-      run: terraform plan -out=tfplan
+      run: terraform plan -no-color
+      continue-on-error: true
 
-    - name: Save Plan
-      uses: actions/upload-artifact@v3
-      with:
-        name: terraform-plan
-        path: terraform/environments/dev/tfplan
     - name: Comment PR with Plan
       uses: actions/github-script@v6
       if: github.event_name == 'pull_request'

@@ -38,20 +38,32 @@ jobs:
 
     - name: Create ECR repository if not exists
       run: |
-        aws ecr describe-repositories --repository-names ${{ env.ECR_REPOSITORY }} || \
-        aws ecr create-repository --repository-name ${{ env.ECR_REPOSITORY }}
+        aws ecr describe-repositories \
+          --repository-names ${{ env.ECR_REPOSITORY }} \
+          --region ${{ env.AWS_REGION }} 2>/dev/null || \
+        aws ecr create-repository \
+          --repository-name ${{ env.ECR_REPOSITORY }} \
+          --region ${{ env.AWS_REGION }}
+
+    - name: Set image tag
+      id: image-tag
+      run: |
+        TAG="${GITHUB_SHA:0:7}"
+        echo "tag=$TAG" >> $GITHUB_OUTPUT
+        echo "✅ Image tag: $TAG"
 
     - name: Build, tag, and push image
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        IMAGE_TAG: ${{ github.sha }}
+        IMAGE_TAG: ${{ steps.image-tag.outputs.tag }}
       run: |
         cd app
         docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-        docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+                   $ECR_REGISTRY/$ECR_REPOSITORY:latest
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-        echo "IMAGE=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
+        echo "✅ Pushed: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
 
   deploy-to-eks:
     name: Deploy to EKS
@@ -75,21 +87,32 @@ jobs:
 
     - name: Update kubeconfig
       run: |
-        aws eks update-kubeconfig --name dev-cluster --region ${{ env.AWS_REGION }}
+        aws eks update-kubeconfig \
+          --name ${{ env.EKS_CLUSTER_NAME }} \
+          --region ${{ env.AWS_REGION }}
 
     - name: Deploy to EKS
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        IMAGE_TAG: ${{ github.sha }}
+        IMAGE_TAG: ${{ needs.build-and-push.outputs.image-tag }}
       run: |
-        sed -i "s|shiva8642/flask-eks-app:latest|$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG|g" kubernetes/manifests/deployment.yaml
+        # Update image in deployment manifest
+        sed -i "s|image:.*|image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG|g" \
+          kubernetes/manifests/deployment.yaml
+        
+        # Apply manifests
         kubectl apply -f kubernetes/manifests/deployment.yaml
-        kubectl rollout status deployment/flask-app
+        
+        # Wait for rollout
+        kubectl rollout status deployment/flask-app --timeout=5m
+        
+        echo "✅ Deployment complete!"
 
     - name: Get Service URL
       run: |
+        echo "🌐 Service Information:"
         kubectl get svc flask-app-service
-
+        
         EXTERNAL_IP=$(kubectl get svc flask-app-service \
           -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
         
