@@ -1,0 +1,61 @@
+name: Terraform Apply
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'terraform/**'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: 1.6.0
+
+jobs:
+  terraform-apply:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    environment: production
+    
+    defaults:
+      run:
+        working-directory: terraform/environments/dev
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Terraform Init
+      run: terraform init
+
+    - name: Terraform Plan
+      run: terraform plan -out=tfplan
+
+    - name: Terraform Apply
+      run: terraform apply -auto-approve tfplan
+
+    - name: Get EKS Cluster Name
+      id: eks-name
+      run: |
+        CLUSTER_NAME=$(terraform output -raw eks_cluster_name)
+        echo "cluster_name=$CLUSTER_NAME" >> $GITHUB_OUTPUT
+
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig --name ${{ steps.eks-name.outputs.cluster_name }} --region ${{ env.AWS_REGION }}
+
+    - name: Verify Cluster
+      run: kubectl get nodes
