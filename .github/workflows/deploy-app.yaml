@@ -12,11 +12,14 @@ on:
 env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: flask-eks-app
+  EKS_CLUSTER_NAME: dev-cluster
 
 jobs:
   build-and-push:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.image-tag.outputs.tag }}
     
     steps:
     - name: Checkout code
@@ -79,10 +82,19 @@ jobs:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
-        sed -i "s|YOUR_DOCKERHUB_USERNAME/flask-eks-app:latest|$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG|g" kubernetes/manifests/deployment.yaml
+        sed -i "s|shiva8642/flask-eks-app:latest|$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG|g" kubernetes/manifests/deployment.yaml
         kubectl apply -f kubernetes/manifests/deployment.yaml
         kubectl rollout status deployment/flask-app
 
     - name: Get Service URL
       run: |
         kubectl get svc flask-app-service
+
+        EXTERNAL_IP=$(kubectl get svc flask-app-service \
+          -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+        
+        if [ -n "$EXTERNAL_IP" ]; then
+          echo "✅ Application URL: http://$EXTERNAL_IP"
+        else
+          echo "⏳ LoadBalancer is provisioning... Check again in 2-3 minutes"
+        fi

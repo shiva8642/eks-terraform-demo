@@ -52,10 +52,13 @@ jobs:
       run: |
         CLUSTER_NAME=$(terraform output -raw eks_cluster_name)
         echo "cluster_name=$CLUSTER_NAME" >> $GITHUB_OUTPUT
+        echo "✅ Cluster name: $CLUSTER_NAME"
 
     - name: Update kubeconfig
       run: |
         aws eks update-kubeconfig --name ${{ steps.eks-name.outputs.cluster_name }} --region ${{ env.AWS_REGION }}
 
     - name: Verify Cluster
-      run: kubectl get nodes
+      run: |
+        kubectl get nodes
+        kubectl get pods -A
